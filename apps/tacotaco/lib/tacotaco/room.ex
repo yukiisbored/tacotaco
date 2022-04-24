@@ -16,8 +16,14 @@ defmodule Tacotaco.Room do
     room = name2via(name)
 
     case Registry.lookup(Tacotaco.RoomRegistry, name) do
-      [] -> DynamicSupervisor.start_child(Tacotaco.RoomSupervisor, {__MODULE__, room_name: name, name: room})
-      [{pid, _}] when is_pid(pid) -> :ok
+      [] ->
+        DynamicSupervisor.start_child(
+          Tacotaco.RoomSupervisor,
+          {__MODULE__, room_name: name, name: room}
+        )
+
+      [{pid, _}] when is_pid(pid) ->
+        :ok
     end
 
     GenServer.call(room, {:join, nick})
@@ -71,9 +77,10 @@ defmodule Tacotaco.Room do
   def handle_call({:message, message}, {client, _tag}, {clients, name}) do
     case :ets.match(clients, {client, :"$1"}) do
       [[nick]] ->
-        broadcast clients, {:message, name, nick, message}
+        broadcast(clients, {:message, name, nick, message})
 
         {:reply, :ok, {clients, name}}
+
       [] ->
         {:reply, {:error, :not_a_member}, {clients, name}}
     end
@@ -86,7 +93,7 @@ defmodule Tacotaco.Room do
       :stop -> {:stop, :shutdown, :ok, state}
     end
   end
-  
+
   @impl true
   def handle_info({:DOWN, _monitor, :process, client, _reason}, state) do
     case part(state, client) do
@@ -97,14 +104,14 @@ defmodule Tacotaco.Room do
 
   @impl true
   def terminate(_reason, {clients, _name}) do
-	  :ets.delete(clients)
+    :ets.delete(clients)
   end
 
   defp part({clients, name}, client) do
     [{_, nick}] = :ets.lookup(clients, client)
     :ets.delete(clients, client)
 
-    broadcast clients, {:part, name, nick}
+    broadcast(clients, {:part, name, nick})
 
     case :ets.first(clients) do
       :"$end_of_table" -> :stop
@@ -113,8 +120,8 @@ defmodule Tacotaco.Room do
   end
 
   defp broadcast(clients, message) do
-    Enum.map(:ets.tab2list(clients), fn {client, _}->
-      send client, message
+    Enum.map(:ets.tab2list(clients), fn {client, _} ->
+      send(client, message)
     end)
   end
 end

@@ -9,7 +9,7 @@ defmodule Tacotaco.Application do
   def start(_type, _args) do
     children = [
       {DynamicSupervisor, name: Tacotaco.RoomSupervisor, strategy: :one_for_one},
-      {Registry, keys: :unique, name: Tacotaco.RoomRegistry},
+      {Registry, keys: :unique, name: Tacotaco.RoomRegistry}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
