@@ -12,39 +12,58 @@ defmodule Tacotaco.Room do
   @doc """
   Join the chat room
   """
-  def join(name, nick) do
-    room = name2via(name)
+  def join(room, nick)
 
+  def join(name, nick) when is_binary(name) do
     case Registry.lookup(Tacotaco.RoomRegistry, name) do
       [] ->
-        DynamicSupervisor.start_child(
-          Tacotaco.RoomSupervisor,
-          {__MODULE__, room_name: name, name: room}
-        )
+        with {:ok, pid} <- create_room(name),
+             :ok <- join(pid, nick) do
+          {:room_created, pid}
+        else
+          err -> err
+        end
 
       [{pid, _}] when is_pid(pid) ->
-        :ok
+        join(pid, nick)
     end
+  end
 
+  def join(room, nick) do
     GenServer.call(room, {:join, nick})
   end
 
   @doc """
   Send a message to the chat room
   """
-  def message(name, message) do
-    wrap(name, fn room ->
-      GenServer.call(room, {:message, message})
-    end)
+  def message(room, message)
+
+  def message(name, msg) when is_binary(name) do
+    wrap(name, &message(&1, msg))
+  end
+
+  def message(room, message) do
+    GenServer.call(room, {:message, message})
   end
 
   @doc """
   Leave the chat room
   """
-  def part(name) do
-    wrap(name, fn room ->
-      GenServer.call(room, :part)
-    end)
+  def part(room)
+
+  def part(name) when is_binary(name) do
+    wrap(name, &part(&1))
+  end
+
+  def part(room) do
+    GenServer.call(room, :part)
+  end
+
+  defp create_room(name) do
+    DynamicSupervisor.start_child(
+      Tacotaco.RoomSupervisor,
+      {__MODULE__, room_name: name, name: name2via(name)}
+    )
   end
 
   defp name2via(name) do
@@ -88,7 +107,7 @@ defmodule Tacotaco.Room do
 
   @impl true
   def handle_call(:part, {client, _tag}, state) do
-    case part(state, client) do
+    case perform_part(state, client) do
       :ok -> {:reply, :ok, state}
       :stop -> {:stop, :shutdown, :ok, state}
     end
@@ -96,7 +115,7 @@ defmodule Tacotaco.Room do
 
   @impl true
   def handle_info({:DOWN, _monitor, :process, client, _reason}, state) do
-    case part(state, client) do
+    case perform_part(state, client) do
       :ok -> {:noreply, state}
       :stop -> {:stop, :shutdown, state}
     end
@@ -107,7 +126,7 @@ defmodule Tacotaco.Room do
     :ets.delete(clients)
   end
 
-  defp part({clients, name}, client) do
+  defp perform_part({clients, name}, client) do
     [{_, nick}] = :ets.lookup(clients, client)
     :ets.delete(clients, client)
 
