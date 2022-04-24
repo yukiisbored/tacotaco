@@ -5,9 +5,9 @@ defmodule Tacotaco.Monitor do
   end
   defp loop() do
     IO.puts(receive do
-      {:join, nick} -> "#{nick} joined the room."
-      {:part, nick} -> "#{nick} left the room."
-      {:message, nick, message} -> "#{nick}: #{message}"
+      {:join, room, nick} -> "#{nick} joined #{room}."
+      {:part, room, nick} -> "#{nick} left #{room}."
+      {:message, room, nick, message} -> "#{room}: <#{nick}> #{message}"
     end)
 
     loop()

@@ -4,8 +4,9 @@ defmodule Tacotaco.Room do
   @doc """
   Starts the chat room
   """
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, :ok, opts)
+  def start_link(opts) do
+    room_name = Keyword.fetch!(opts, :room_name)
+    GenServer.start_link(__MODULE__, room_name, opts)
   end
 
   @doc """
@@ -15,7 +16,7 @@ defmodule Tacotaco.Room do
     room = name2via(name)
 
     case Registry.lookup(Tacotaco.RoomRegistry, name) do
-      [] -> DynamicSupervisor.start_child(Tacotaco.RoomSupervisor, {__MODULE__, name: room})
+      [] -> DynamicSupervisor.start_child(Tacotaco.RoomSupervisor, {__MODULE__, room_name: name, name: room})
       [{pid, _}] when is_pid(pid) -> :ok
     end
 
@@ -51,59 +52,59 @@ defmodule Tacotaco.Room do
   end
 
   @impl true
-  def init(:ok) do
+  def init(name) do
     clients = :ets.new(__MODULE__, [:private, read_concurrency: true])
-    {:ok, {clients}}
+    {:ok, {clients, name}}
   end
 
   @impl true
-  def handle_call({:join, nick}, {client, _tag}, {clients}) do
+  def handle_call({:join, nick}, {client, _tag}, {clients, name}) do
     Process.monitor(client)
     :ets.insert(clients, {client, nick})
 
-    broadcast(clients, {:join, nick})
+    broadcast(clients, {:join, name, nick})
 
-    {:reply, :ok, {clients}}
+    {:reply, :ok, {clients, name}}
   end
 
   @impl true
-  def handle_call({:message, message}, {client, _tag}, {clients}) do
+  def handle_call({:message, message}, {client, _tag}, {clients, name}) do
     case :ets.match(clients, {client, :"$1"}) do
       [[nick]] ->
-        broadcast clients, {:message, nick, message}
+        broadcast clients, {:message, name, nick, message}
 
-        {:reply, :ok, {clients}}
+        {:reply, :ok, {clients, name}}
       [] ->
-        {:reply, {:error, :not_a_member}, {clients}}
+        {:reply, {:error, :not_a_member}, {clients, name}}
     end
   end
 
   @impl true
-  def handle_call(:part, {client, _tag}, {clients}) do
-    case part(clients, client) do
-      :ok -> {:reply, :ok, {clients}}
-      :stop -> {:stop, :shutdown, :ok, {clients}}
+  def handle_call(:part, {client, _tag}, state) do
+    case part(state, client) do
+      :ok -> {:reply, :ok, state}
+      :stop -> {:stop, :shutdown, :ok, state}
     end
   end
   
   @impl true
-  def handle_info({:DOWN, _monitor, :process, client, _reason}, {clients}) do
-    case part(clients, client) do
-      :ok -> {:noreply, {clients}}
-      :stop -> {:stop, :shutdown, {clients}}
+  def handle_info({:DOWN, _monitor, :process, client, _reason}, state) do
+    case part(state, client) do
+      :ok -> {:noreply, state}
+      :stop -> {:stop, :shutdown, state}
     end
   end
 
   @impl true
-  def terminate(_reason, {clients}) do
+  def terminate(_reason, {clients, _name}) do
 	  :ets.delete(clients)
   end
 
-  defp part(clients, client) do
+  defp part({clients, name}, client) do
     [{_, nick}] = :ets.lookup(clients, client)
     :ets.delete(clients, client)
 
-    broadcast clients, {:part, nick}
+    broadcast clients, {:part, name, nick}
 
     case :ets.first(clients) do
       :"$end_of_table" -> :stop
