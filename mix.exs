@@ -1,4 +1,4 @@
-defmodule Tacotaco.MixProject do
+defmodule TacotacoUmbrella.MixProject do
   use Mix.Project
 
   def project do
