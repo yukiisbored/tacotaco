@@ -12,25 +12,25 @@ defmodule Tacotaco.Room do
   @doc """
   Join the chat room
   """
-  def join(room, nick)
+  def join(room, nick, receiver)
 
-  def join(name, nick) when is_binary(name) do
+  def join(name, nick, receiver) when is_binary(name) do
     case Registry.lookup(Tacotaco.RoomRegistry, name) do
       [] ->
         with {:ok, pid} <- create_room(name),
-             :ok <- join(pid, nick) do
+             :ok <- join(pid, nick, receiver) do
           {:room_created, pid}
         else
           err -> err
         end
 
       [{pid, _}] when is_pid(pid) ->
-        join(pid, nick)
+        join(pid, nick, receiver)
     end
   end
 
-  def join(room, nick) do
-    GenServer.call(room, {:join, nick})
+  def join(room, nick, receiver) do
+    GenServer.call(room, {:join, nick, receiver})
   end
 
   @doc """
@@ -83,9 +83,9 @@ defmodule Tacotaco.Room do
   end
 
   @impl true
-  def handle_call({:join, nick}, {client, _tag}, {clients, name}) do
+  def handle_call({:join, nick, receiver}, {client, _tag}, {clients, name}) do
     Process.monitor(client)
-    :ets.insert(clients, {client, nick})
+    :ets.insert(clients, {client, nick, receiver})
 
     broadcast(clients, {:join, name, nick})
 
@@ -94,7 +94,7 @@ defmodule Tacotaco.Room do
 
   @impl true
   def handle_call({:message, message}, {client, _tag}, {clients, name}) do
-    case :ets.match(clients, {client, :"$1"}) do
+    case :ets.match(clients, {client, :"$1", :_}) do
       [[nick]] ->
         broadcast(clients, {:message, name, nick, message})
 
@@ -127,7 +127,7 @@ defmodule Tacotaco.Room do
   end
 
   defp perform_part({clients, name}, client) do
-    [{_, nick}] = :ets.lookup(clients, client)
+    [{_, nick, _}] = :ets.lookup(clients, client)
     :ets.delete(clients, client)
 
     broadcast(clients, {:part, name, nick})
@@ -139,8 +139,8 @@ defmodule Tacotaco.Room do
   end
 
   defp broadcast(clients, message) do
-    Enum.map(:ets.tab2list(clients), fn {client, _} ->
-      send(client, message)
+    Enum.map(:ets.tab2list(clients), fn {_, _, receiver} ->
+      send(receiver, message)
     end)
   end
 end

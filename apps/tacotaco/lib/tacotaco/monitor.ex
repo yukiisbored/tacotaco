@@ -1,6 +1,6 @@
 defmodule Tacotaco.Monitor do
   def listen(room, nick) do
-    :ok = Tacotaco.Room.join(room, nick)
+    :ok = Tacotaco.Room.join(room, nick, self())
     loop()
   end
 
